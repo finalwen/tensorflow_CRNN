@@ -6,7 +6,7 @@ import random
 import json
 import sys
 
-NUM_EXAMPLES_PER_EPOCH = 10000
+NUM_EXAMPLES_PER_EPOCH = 1000
 RATIO = 0.7
 
 
@@ -28,7 +28,7 @@ def generation_TFRecord(data_dir, tfrecord_dir):
     @param data_dir: 数据所在文件夹
     @return:
     '''
-    vocublary = json.load(open("./map.json", "r"))
+    vocublary = json.load(open("./char_map.json", "r"))
     image_name_list = []
     for file in os.listdir(data_dir):
         if file.endswith('.jpg'):
@@ -129,8 +129,8 @@ def read_tfrecord(filename, batch_size, is_train=True):
 
 def main(argv):
     # print(vocublary)
-    data_dir = "/home/mary/textGenation/english/Train_en_10000/Train"
-    tfrecord_dir = '/home/mary/textGenation/english/Train_en_10000/'
+    data_dir = "D:/tmp/lstm_ctc_data2/"
+    tfrecord_dir = 'D:/tmp/lstm_ctc_data2_tfrecord/'
     generation_TFRecord(data_dir, tfrecord_dir)
     tfrecord_files = os.path.join(tfrecord_dir, 'train_dataset.tfrecord')
     train_image, train_label, train_seq_length = read_tfrecord(tfrecord_files, 32)

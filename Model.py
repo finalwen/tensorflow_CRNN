@@ -28,7 +28,7 @@ class CRNN(object):
         if not os.path.exists(self.checkpoint_dir):
             os.makedirs(self.checkpoint_dir)
 
-        self.char_map_dict = json.load(open('./map.json', 'r'))
+        self.char_map_dict = json.load(open('./char_map.json', 'r'))
         self.num_classes = len(self.char_map_dict.keys()) + 1
 
         # 设置placeholder
