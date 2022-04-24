@@ -54,4 +54,4 @@ def gen_text(cnt):
         print("生成图片：", img_path)
 
 
-gen_text(1000)
+gen_text(5000)

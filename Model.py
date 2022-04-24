@@ -178,8 +178,7 @@ class CRNN(object):
             print('start training')
             for index in range(self.epochs):
                 #
-                batch_image, batch_label, batch_seq_length = session.run(
-                    [image, label, seq_len_batch])
+                batch_image, batch_label, batch_seq_length = session.run([image, label, seq_len_batch])
                 #
                 _, loss, lr, seq_distance, decodeds, summary = session.run(
                     [self.optimizer, self.loss, self.learning_rate,
@@ -188,16 +187,15 @@ class CRNN(object):
                                self.input_labels: batch_label,
                                self.input_sequence_lengths: batch_seq_length})
                 #
-                if index % 100 == 0:
+                if index % 10 == 0:
                     preds = self.sparse_matrix_to_list(decodeds[0])
                     gt_labels = self.sparse_matrix_to_list(batch_label)
                     accuracy = []
                     for j, gt_label in enumerate(gt_labels):
                         pred = preds[j]
                         #
-                        if index % 2000 == 0:
-                            print('prediction:', pred)
-                            print('grouth_truth_label:', gt_label)
+                        print('prediction:', pred)
+                        print('grouth_truth_label:', gt_label)
                         #
                         total_count = len(gt_label)
                         correct_count = 0
