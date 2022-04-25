@@ -6,12 +6,8 @@ import random
 import json
 import sys
 
-NUM_EXAMPLES_PER_EPOCH = 1000
-RATIO = 0.7
-
-
-def int64_feature(value):
-    return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+NUM_EXAMPLES_PER_EPOCH = 5000
+TRAIN_RATIO = 0.7
 
 
 def int64_list_feature(value):
@@ -28,46 +24,56 @@ def generation_TFRecord(data_dir, tfrecord_dir):
     @param data_dir: 数据所在文件夹
     @return:
     '''
+
     vocublary = json.load(open("./char_map.json", "r"))
+
+    # 读取图片文件名称
     image_name_list = []
     for file in os.listdir(data_dir):
         if file.endswith('.jpg'):
             image_name_list.append(file)
 
+    # 随机排序
     random.shuffle(image_name_list)
-    # capacity = len(image_name_list)
 
     # 生成train tfrecord文件
     train_writer = tf.python_io.TFRecordWriter(os.path.join(tfrecord_dir, 'train_dataset.tfrecord'))
-    train_image_name_list = image_name_list[0: int(RATIO * NUM_EXAMPLES_PER_EPOCH)]
+    # 训练集切片
+    train_image_name_list = image_name_list[0: int(NUM_EXAMPLES_PER_EPOCH * TRAIN_RATIO)]
     for train_name in train_image_name_list:
+        # 读取图片标签转换成单字符列表。
         train_image_label = []
         for s in train_name.strip('.jpg'):
             train_image_label.append(vocublary[s])
 
-        train_image_raw = cv2.imread(os.path.join(data_dir, train_name), 1)
+        # 读取彩色图片
+        train_image_raw = cv2.imread(os.path.join(data_dir, train_name), cv2.IMREAD_COLOR)
         if train_image_raw is None:
             continue
         height, width, channel = train_image_raw.shape
+
+        # 等比例缩放图片。高度固定为32，宽度等比缩小。
         ratio = 32 / float(height)
         train_image = cv2.resize(train_image_raw, (int(width * ratio), 32))
+
         # 将图片格式转换(编码)成流数据，赋值到内存缓存中;主要用于图像数据格式的压缩，方便网络传输。
         is_success, train_image_buffer = cv2.imencode('.jpg', train_image)
         if not is_success:
             continue
         train_image_byte = train_image_buffer.tostring()
 
+        # 生成TFRecord
         train_example = tf.train.Example(features=tf.train.Features(feature={
             'label': int64_list_feature(train_image_label),
             'image': bytes_feature(train_image_byte)}))
         train_writer.write(train_example.SerializeToString())
         sys.stdout.flush()
-    sys.stdout.flush()
     train_writer.close()
 
     # 生成test tfrecord文件
     test_writer = tf.python_io.TFRecordWriter(os.path.join(tfrecord_dir, 'test_dataset.tfrecord'))
-    test_image_name_list = image_name_list[int(NUM_EXAMPLES_PER_EPOCH * RATIO):NUM_EXAMPLES_PER_EPOCH]
+    # 测试集切片
+    test_image_name_list = image_name_list[int(NUM_EXAMPLES_PER_EPOCH * TRAIN_RATIO):NUM_EXAMPLES_PER_EPOCH]
     for test_name in test_image_name_list:
         test_image_label = []
         for s in test_name.strip('.jpg'):
@@ -90,6 +96,7 @@ def generation_TFRecord(data_dir, tfrecord_dir):
             'label': int64_list_feature(test_image_label),
             'image': bytes_feature(test_image_byte)}))
         test_writer.write(test_example.SerializeToString())
+        sys.stdout.flush()
     test_writer.close()
 
 
@@ -98,6 +105,7 @@ def read_tfrecord(filename, batch_size, is_train=True):
         raise ValueError('connot find tfrecord file in path')
 
     filename_queue = tf.train.string_input_producer([filename])
+
     reader = tf.TFRecordReader()
     _, serialize_example = reader.read(filename_queue)
     image_features = tf.parse_single_example(serialized=serialize_example,
@@ -128,10 +136,12 @@ def read_tfrecord(filename, batch_size, is_train=True):
 
 
 def main(argv):
-    # print(vocublary)
     data_dir = "D:/tmp/lstm_ctc_data2/"
     tfrecord_dir = 'D:/tmp/lstm_ctc_data2_tfrecord/'
+    # 生成TFRecord数据
     generation_TFRecord(data_dir, tfrecord_dir)
+    sys.stdout.flush()
+    # 读取TFRecord数据
     tfrecord_files = os.path.join(tfrecord_dir, 'train_dataset.tfrecord')
     train_image, train_label, train_seq_length = read_tfrecord(tfrecord_files, 32)
     dense_label = tf.sparse_tensor_to_dense(train_label)

@@ -1,7 +1,7 @@
 import tensorflow as tf
 import numpy as np
 from tensorflow.contrib import rnn
-from TFrecorde import read_tfrecord, NUM_EXAMPLES_PER_EPOCH, RATIO
+from TFRecord import read_tfrecord, NUM_EXAMPLES_PER_EPOCH, TRAIN_RATIO
 import os
 import cv2
 import json
@@ -243,7 +243,7 @@ class CRNN(object):
         saver_path = tf.train.latest_checkpoint(self.checkpoint_dir)
 
         #
-        test_sample_count = NUM_EXAMPLES_PER_EPOCH - int(RATIO * NUM_EXAMPLES_PER_EPOCH)
+        test_sample_count = NUM_EXAMPLES_PER_EPOCH - int(TRAIN_RATIO * NUM_EXAMPLES_PER_EPOCH)
         step_num = test_sample_count // self.batch_size
         print('iteration:', step_num)
 
