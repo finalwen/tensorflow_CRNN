@@ -6,7 +6,6 @@ import random
 import json
 import sys
 
-NUM_EXAMPLES_PER_EPOCH = 5000
 TRAIN_RATIO = 0.7
 
 
@@ -32,6 +31,7 @@ def generation_TFRecord(data_dir, tfrecord_dir):
     for file in os.listdir(data_dir):
         if file.endswith('.jpg'):
             image_name_list.append(file)
+    image_size = len(image_name_list)
 
     # 随机排序
     random.shuffle(image_name_list)
@@ -39,7 +39,7 @@ def generation_TFRecord(data_dir, tfrecord_dir):
     # 生成train tfrecord文件
     train_writer = tf.python_io.TFRecordWriter(os.path.join(tfrecord_dir, 'train_dataset.tfrecord'))
     # 训练集切片
-    train_image_name_list = image_name_list[0: int(NUM_EXAMPLES_PER_EPOCH * TRAIN_RATIO)]
+    train_image_name_list = image_name_list[0: int(image_size * TRAIN_RATIO)]
     for train_name in train_image_name_list:
         # 读取图片标签转换成单字符列表。
         train_image_label = []
@@ -73,7 +73,7 @@ def generation_TFRecord(data_dir, tfrecord_dir):
     # 生成test tfrecord文件
     test_writer = tf.python_io.TFRecordWriter(os.path.join(tfrecord_dir, 'test_dataset.tfrecord'))
     # 测试集切片
-    test_image_name_list = image_name_list[int(NUM_EXAMPLES_PER_EPOCH * TRAIN_RATIO):NUM_EXAMPLES_PER_EPOCH]
+    test_image_name_list = image_name_list[int(image_size * TRAIN_RATIO):image_size]
     for test_name in test_image_name_list:
         test_image_label = []
         for s in test_name.strip('.jpg'):
@@ -147,16 +147,18 @@ def main(argv):
     dense_label = tf.sparse_tensor_to_dense(train_label)
 
     with tf.Session() as session:
-        session.run(tf.group(tf.global_variables_initializer(),
-                             tf.local_variables_initializer()))
+        session.run(tf.group(
+            tf.global_variables_initializer(),
+            tf.local_variables_initializer()
+        ))
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=session, coord=coord)
         for i in range(2):
-            t_image, t_label, t_seq_len, t_dense_label = session.run([train_image, train_label,
-                                                                      train_seq_length, dense_label])
+            t_image, t_label, t_seq_len, t_dense_label = session.run([
+                train_image, train_label, train_seq_length, dense_label
+            ])
             print(t_dense_label)
             print(t_seq_len)
-
         coord.request_stop()
         coord.join(threads=threads)
 

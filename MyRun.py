@@ -5,7 +5,7 @@ from Model import CRNN
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
-crnn = CRNN(batch_size=64,
+crnn = CRNN(batch_size=32,
             init_learning_rate=0.1,
             epochs=1000,
             dataset_path="D:/tmp/lstm_ctc_data2_tfrecord/train_dataset.tfrecord",
