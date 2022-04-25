@@ -6,6 +6,7 @@ import random
 import json
 import sys
 
+NUM_EXAMPLES_PER_EPOCH = 4415
 TRAIN_RATIO = 0.7
 
 
