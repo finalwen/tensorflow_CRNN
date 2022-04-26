@@ -37,8 +37,7 @@ class CRNN(object):
         self.input_sequence_lengths = tf.placeholder(tf.int32, shape=[self.batch_size], name='input_sequence_length')
 
         # network
-        self.ouputs = self.build_network(self.input_images,
-                                         self.input_sequence_lengths)
+        self.outputs = self.build_network(self.input_images, self.input_sequence_lengths)
 
         # learning_rate
         self.global_step = tf.train.create_global_step()
@@ -47,7 +46,7 @@ class CRNN(object):
         tf.summary.scalar('learning_rate', self.learning_rate)
 
         # computer the CTC(Connectionist Temporal Classification) Loss
-        self.loss = tf.reduce_mean(tf.nn.ctc_loss(labels=self.input_labels, inputs=self.ouputs,
+        self.loss = tf.reduce_mean(tf.nn.ctc_loss(labels=self.input_labels, inputs=self.outputs,
                                                   sequence_length=self.input_sequence_lengths,
                                                   ignore_longer_outputs_than_inputs=True))
         tf.summary.scalar('ctc_loss', self.loss)
@@ -55,7 +54,7 @@ class CRNN(object):
         self.optimizer = tf.train.AdadeltaOptimizer(self.learning_rate).minimize(self.loss, self.global_step)
 
         #
-        self.decoded, self.log_prob = tf.nn.ctc_beam_search_decoder(self.ouputs, self.input_sequence_lengths,
+        self.decoded, self.log_prob = tf.nn.ctc_beam_search_decoder(self.outputs, self.input_sequence_lengths,
                                                                     merge_repeated=False)
 
         # tf.edit_distance()计算序列之间的编辑距离
@@ -65,46 +64,56 @@ class CRNN(object):
         # summary
         self.summary_op = tf.summary.merge_all()
 
-    def build_network(self, input, input_sequence_lengths):
-        cnn_output = self.CNN_VGG(input)
+    def build_network(self, input_images, input_sequence_lengths):
+        cnn_output = self.cnn_vgg(input_images)
         sequence_out = self.map_to_sequence(cnn_output)
         net_out = self.RNN(sequence_out, input_sequence_lengths)
         return net_out
 
-    def CNN_VGG(self, inputs):
+    def cnn_vgg(self, inputs):
         ''' CNN extract feature from each input image, 网络架构选择的是VGG(CRNN)
         @param inputs: the input image
         @return: feature maps
         '''
+        # 输入：(32, 32, ?, 3)
+        print("cnn network input: ", inputs.shape)
         with tf.variable_scope('VGG_CNN'):
+            # 64 / 3 x 3 / 1 / 1
             conv1 = tf.layers.conv2d(inputs=inputs, filters=64, kernel_size=(3, 3),
                                      padding='SAME', activation=tf.nn.relu, name='conv_1')
+            # 2 x 2 / 2
             pool1 = tf.layers.max_pooling2d(inputs=conv1, pool_size=(2, 2), strides=2, name='pool_1')
 
-            #
+            # 128 / 3 x 3 / 1 / 1
             conv2 = tf.layers.conv2d(inputs=pool1, filters=128, kernel_size=(3, 3),
                                      padding='SAME', activation=tf.nn.relu, name='conv_2')
+            # 2 x 2 / 2
             pool2 = tf.layers.max_pooling2d(inputs=conv2, pool_size=(2, 2), strides=2, name='pool_2')
 
-            #
+            # 256 / 3 x 3 / 1 / 1
             conv3 = tf.layers.conv2d(inputs=pool2, filters=256, kernel_size=(3, 3),
                                      padding='SAME', activation=tf.nn.relu, name='conv_3')
+            # 2 x 1 / 2 x 1
             pool3 = tf.layers.max_pooling2d(inputs=conv3, pool_size=(2, 1), strides=(2, 1), name='pool_3')
 
-            #
+            # 256 / 3 x 3 / 1 / 1
             conv4 = tf.layers.conv2d(inputs=pool3, filters=256, kernel_size=(3, 3),
                                      padding='SAME', activation=tf.nn.relu, name='conv_4')
             bn1 = tf.layers.batch_normalization(conv4, training=True, name='bn1')
+
+            # 512 / 3 x 3 / 1 / 1
             conv5 = tf.layers.conv2d(inputs=bn1, filters=512, kernel_size=(3, 3),
                                      padding='SAME', activation=tf.nn.relu, name='conv_5')
-            bn2 = tf.layers.batch_normalization(conv5, training=True, name='bn_2')
+            bn2 = tf.layers.batch_normalization(conv5, training=True, name='bn2')
+
             pool4 = tf.layers.max_pooling2d(inputs=bn2, pool_size=(2, 1), strides=(2, 1), name='pool_5')
 
-            #
-            conv7 = tf.layers.conv2d(inputs=pool4, filters=512, kernel_size=(2, 1),
+            # 512 / 2 x 1 / 1 / 1
+            conv6 = tf.layers.conv2d(inputs=pool4, filters=512, kernel_size=(2, 1),
                                      padding='VALID', activation=tf.nn.relu, name='conv_6')
-            # print('conv_7', conv7.shape)
-        return conv7
+            # 输出形状: (32, 1, ?, 512)
+            print('cnn network output: ', conv6.shape)
+        return conv6
 
     def map_to_sequence(self, input_tensor):
         return tf.squeeze(input_tensor, axis=1)
