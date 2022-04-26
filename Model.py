@@ -238,7 +238,7 @@ class CRNN(object):
 
     def test(self):
         print('testing!')
-        image, label, seq_len_batch = read_tfrecord(self.dataset_path, self.batch_size, is_train=False)
+        image, label, seq_len_batch = read_tfrecord(self.dataset_path, self.batch_size)
         saver = tf.train.Saver()
         saver_path = tf.train.latest_checkpoint(self.checkpoint_dir)
 

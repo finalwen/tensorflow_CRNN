@@ -7,7 +7,7 @@ import sys
 import cv2
 import tensorflow as tf
 
-NUM_EXAMPLES_PER_EPOCH = 4415
+NUM_EXAMPLES_PER_EPOCH = 9382
 TRAIN_RATIO = 0.7
 
 
@@ -35,6 +35,7 @@ def generate_tfrecord(data_dir, tfrecord_dir):
         if file.endswith('.jpg'):
             image_name_list.append(file)
     image_size = len(image_name_list)
+    print("图片总数: ", len(image_name_list))
 
     # 随机排序
     random.shuffle(image_name_list)
@@ -43,6 +44,7 @@ def generate_tfrecord(data_dir, tfrecord_dir):
     train_writer = tf.python_io.TFRecordWriter(os.path.join(tfrecord_dir, 'train_dataset.tfrecord'))
     # 训练集切片
     train_image_name_list = image_name_list[0: int(image_size * TRAIN_RATIO)]
+    print("训练集总数: ", len(train_image_name_list))
     for train_name in train_image_name_list:
         # 读取图片标签转换成单字符列表。
         train_image_label = []
@@ -78,6 +80,7 @@ def generate_tfrecord(data_dir, tfrecord_dir):
     test_writer = tf.python_io.TFRecordWriter(os.path.join(tfrecord_dir, 'test_dataset.tfrecord'))
     # 测试集切片
     test_image_name_list = image_name_list[int(image_size * TRAIN_RATIO):image_size]
+    print("测试集总数: ", len(test_image_name_list))
     for test_name in test_image_name_list:
         test_image_label = []
         for s in test_name.strip('.jpg'):
@@ -105,7 +108,7 @@ def generate_tfrecord(data_dir, tfrecord_dir):
     sys.stdout.flush()
 
 
-def read_tfrecord(filename, batch_size, is_train=True):
+def read_tfrecord(filename, batch_size):
     '''
     读取tfreocrd文件
     @param filename:
@@ -125,27 +128,23 @@ def read_tfrecord(filename, batch_size, is_train=True):
                                                  'label': tf.VarLenFeature(dtype=tf.int64),
                                                  'image': tf.FixedLenFeature([], tf.string)
                                              })
+    # 提取并转换图片数据
     image = tf.image.decode_jpeg(image_features['image'])
     image.set_shape([32, None, 3])
     image = tf.cast(image, tf.float32)
 
+    # 提取并转换标签数据
     label = tf.cast(image_features['label'], tf.int32)
-    # 为什么宽度要除以4
+    # 序列长度。为什么宽度要除以4???
     sequence_length = tf.cast(tf.shape(image)[-2] / 4, tf.int32)
 
-    if is_train is True:
-        train_image_batch, train_label_batch, train_sequence_length = tf.train.batch([image, label, sequence_length],
-                                                                                     batch_size=batch_size,
-                                                                                     dynamic_pad=True,
-                                                                                     num_threads=4,
-                                                                                     capacity=1000 + 3 * batch_size)
-        return train_image_batch, train_label_batch, train_sequence_length
-    else:
-        test_image_batch, test_label_batch, test_sequence_length = tf.train.batch([image, label, sequence_length],
-                                                                                  batch_size=batch_size,
-                                                                                  dynamic_pad=True,
-                                                                                  capacity=1000 + 3 * batch_size)
-        return test_image_batch, test_label_batch, test_sequence_length
+    # 创建批量读取队列
+    train_image_batch, train_label_batch, train_sequence_length = tf.train.batch([image, label, sequence_length],
+                                                                                 batch_size=batch_size,
+                                                                                 dynamic_pad=True,
+                                                                                 num_threads=4,
+                                                                                 capacity=1000 + 3 * batch_size)
+    return train_image_batch, train_label_batch, train_sequence_length
 
 
 def main(argv):
@@ -164,7 +163,9 @@ def main(argv):
             tf.global_variables_initializer(),
             tf.local_variables_initializer()
         ))
+        # 创建线程管理器
         coord = tf.train.Coordinator()
+        # 启动入队线程，读取example数据
         threads = tf.train.start_queue_runners(sess=session, coord=coord)
         for i in range(2):
             t_image, t_label, t_seq_len, t_dense_label = session.run([
