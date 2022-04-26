@@ -1,10 +1,11 @@
 # coding=utf-8
-import tensorflow as tf
-import os
-import cv2
-import random
 import json
+import os
+import random
 import sys
+
+import cv2
+import tensorflow as tf
 
 NUM_EXAMPLES_PER_EPOCH = 4415
 TRAIN_RATIO = 0.7
@@ -18,14 +19,15 @@ def bytes_feature(value):
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
 
-def generation_TFRecord(data_dir, tfrecord_dir):
+def generate_tfrecord(data_dir, tfrecord_dir):
     '''
     生成TFRecord文件
+    @param tfrecord_dir:
     @param data_dir: 数据所在文件夹
     @return:
     '''
-
-    vocublary = json.load(open("./char_map.json", "r"))
+    # 读取标签字典数据
+    vocabulary = json.load(open("./char_map.json", "r"))
 
     # 读取图片文件名称
     image_name_list = []
@@ -45,7 +47,7 @@ def generation_TFRecord(data_dir, tfrecord_dir):
         # 读取图片标签转换成单字符列表。
         train_image_label = []
         for s in train_name.strip('.jpg'):
-            train_image_label.append(vocublary[s])
+            train_image_label.append(vocabulary[s])
 
         # 读取彩色图片
         train_image_raw = cv2.imread(os.path.join(data_dir, train_name), cv2.IMREAD_COLOR)
@@ -61,15 +63,16 @@ def generation_TFRecord(data_dir, tfrecord_dir):
         is_success, train_image_buffer = cv2.imencode('.jpg', train_image)
         if not is_success:
             continue
-        train_image_byte = train_image_buffer.tostring()
+        train_image_bytes = train_image_buffer.tostring()
 
         # 生成TFRecord
         train_example = tf.train.Example(features=tf.train.Features(feature={
             'label': int64_list_feature(train_image_label),
-            'image': bytes_feature(train_image_byte)}))
+            'image': bytes_feature(train_image_bytes)}))
         train_writer.write(train_example.SerializeToString())
         sys.stdout.flush()
     train_writer.close()
+    sys.stdout.flush()
 
     # 生成test tfrecord文件
     test_writer = tf.python_io.TFRecordWriter(os.path.join(tfrecord_dir, 'test_dataset.tfrecord'))
@@ -78,7 +81,7 @@ def generation_TFRecord(data_dir, tfrecord_dir):
     for test_name in test_image_name_list:
         test_image_label = []
         for s in test_name.strip('.jpg'):
-            test_image_label.append(vocublary[s])
+            test_image_label.append(vocabulary[s])
 
         # 以彩色图像方式读取
         test_image_raw = cv2.imread(os.path.join(data_dir, test_name), 1)
@@ -99,11 +102,19 @@ def generation_TFRecord(data_dir, tfrecord_dir):
         test_writer.write(test_example.SerializeToString())
         sys.stdout.flush()
     test_writer.close()
+    sys.stdout.flush()
 
 
 def read_tfrecord(filename, batch_size, is_train=True):
+    '''
+    读取tfreocrd文件
+    @param filename:
+    @param batch_size:
+    @param is_train:
+    @return:
+    '''
     if not os.path.exists(filename):
-        raise ValueError('connot find tfrecord file in path')
+        raise ValueError('cannot find tfrecord file in path')
 
     filename_queue = tf.train.string_input_producer([filename])
 
@@ -119,6 +130,7 @@ def read_tfrecord(filename, batch_size, is_train=True):
     image = tf.cast(image, tf.float32)
 
     label = tf.cast(image_features['label'], tf.int32)
+    # 为什么宽度要除以4
     sequence_length = tf.cast(tf.shape(image)[-2] / 4, tf.int32)
 
     if is_train is True:
@@ -140,13 +152,13 @@ def main(argv):
     data_dir = "D:/tmp/lstm_ctc_data2/"
     tfrecord_dir = 'D:/tmp/lstm_ctc_data2_tfrecord/'
     # 生成TFRecord数据
-    generation_TFRecord(data_dir, tfrecord_dir)
-    sys.stdout.flush()
+    generate_tfrecord(data_dir, tfrecord_dir)
     # 读取TFRecord数据
     tfrecord_files = os.path.join(tfrecord_dir, 'train_dataset.tfrecord')
     train_image, train_label, train_seq_length = read_tfrecord(tfrecord_files, 32)
+    # 稀疏转稠密张量
     dense_label = tf.sparse_tensor_to_dense(train_label)
-
+    # 执行计算图
     with tf.Session() as session:
         session.run(tf.group(
             tf.global_variables_initializer(),
