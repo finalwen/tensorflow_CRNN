@@ -36,24 +36,25 @@ class CRNN(object):
         self.input_labels = tf.sparse_placeholder(tf.int32, name='input_labels')
         self.input_sequence_lengths = tf.placeholder(tf.int32, shape=[self.batch_size], name='input_sequence_length')
 
-        # network
+        # network: cnn + rnn
         self.outputs = self.build_network(self.input_images, self.input_sequence_lengths)
-
-        # learning_rate
-        self.global_step = tf.train.create_global_step()
-        self.learning_rate = tf.train.exponential_decay(learning_rate=init_learning_rate, global_step=self.global_step,
-                                                        decay_rate=0.8, decay_steps=1000, staircase=True)
-        tf.summary.scalar('learning_rate', self.learning_rate)
 
         # computer the CTC(Connectionist Temporal Classification) Loss
         self.loss = tf.reduce_mean(tf.nn.ctc_loss(labels=self.input_labels, inputs=self.outputs,
                                                   sequence_length=self.input_sequence_lengths,
                                                   ignore_longer_outputs_than_inputs=True))
         tf.summary.scalar('ctc_loss', self.loss)
+
+        # learning_rate
+        self.global_step = tf.train.create_global_step()
+        self.learning_rate = tf.train.exponential_decay(learning_rate=init_learning_rate, global_step=self.global_step,
+                                                        decay_steps=1000, decay_rate=0.8, staircase=True)
+        tf.summary.scalar('learning_rate', self.learning_rate)
+
         # optimizer
         self.optimizer = tf.train.AdadeltaOptimizer(self.learning_rate).minimize(self.loss, self.global_step)
 
-        #
+        # 解码网络输出的数据
         self.decoded, self.log_prob = tf.nn.ctc_beam_search_decoder(self.outputs, self.input_sequence_lengths,
                                                                     merge_repeated=False)
 
@@ -67,7 +68,7 @@ class CRNN(object):
     def build_network(self, input_images, input_sequence_lengths):
         cnn_output = self.cnn_vgg(input_images)
         sequence_out = self.map_to_sequence(cnn_output)
-        net_out = self.RNN(sequence_out, input_sequence_lengths)
+        net_out = self.rnn(sequence_out, input_sequence_lengths)
         return net_out
 
     def cnn_vgg(self, inputs):
@@ -118,13 +119,14 @@ class CRNN(object):
     def map_to_sequence(self, input_tensor):
         return tf.squeeze(input_tensor, axis=1)
 
-    def RNN(self, input, seq_len):
+    def rnn(self, inputs, seq_len):
+        print("rnn network input: ", inputs.shape)
         with tf.variable_scope('BiLSTM_1'):
             lstm_fw_cell_1 = rnn.BasicLSTMCell(256)
             lstm_bw_cell_1 = rnn.BasicLSTMCell(256)
             inter_output, _ = tf.nn.bidirectional_dynamic_rnn(lstm_fw_cell_1,
                                                               lstm_bw_cell_1,
-                                                              input, seq_len,
+                                                              inputs, seq_len,
                                                               dtype=tf.float32)
             inter_output = tf.concat(inter_output, 2)
         with tf.variable_scope('BiLSTM_2'):
@@ -137,11 +139,13 @@ class CRNN(object):
             rnn_output = tf.concat(outputs, 2)
         rnn_reshaped = tf.reshape(rnn_output, shape=[-1, 512])
         # doing the affine projection
-        softmax_w = tf.Variable(tf.truncated_normal(shape=[512, self.num_classes], stddev=0.01), name='weight_w')
-        logits = tf.matmul(rnn_reshaped, softmax_w)
+        softmax_w = tf.Variable(tf.truncated_normal(shape=[512, self.num_classes], stddev=0.01), name='w')
+        softmax_b = tf.Variable(tf.constant(0., shape=[self.num_classes]), name="b")
+        logits = tf.matmul(rnn_reshaped, softmax_w) + softmax_b
         logits = tf.reshape(logits, shape=[self.batch_size, -1, self.num_classes])
         # final layer, the output of BLSTM
         net_out = tf.transpose(logits, (1, 0, 2), name='transpose_time_major')
+        print("rnn network input: ", net_out.shape)
         return net_out
 
     def sparse_matrix_to_list(self, sparse_matrix):
@@ -150,8 +154,8 @@ class CRNN(object):
         dense_shape = sparse_matrix.dense_shape
 
         dense_matrix = len(self.char_map_dict.keys()) * np.ones(dense_shape, dtype=np.int32)
-        for i, indice in enumerate(indices):
-            dense_matrix[indice[0], indice[1]] = values[i]
+        for i, index in enumerate(indices):
+            dense_matrix[index[0], index[1]] = values[i]
 
         string_list = []
         for row in dense_matrix:
@@ -189,21 +193,23 @@ class CRNN(object):
                 #
                 batch_image, batch_label, batch_seq_length = session.run([image, label, seq_len_batch])
                 #
-                _, loss, lr, seq_distance, decodeds, summary = session.run(
+                _, loss, lr, seq_distance, decodes, summary = session.run(
                     [self.optimizer, self.loss, self.learning_rate,
                      self.sequence_distance, self.decoded, self.summary_op],
                     feed_dict={self.input_images: batch_image,
                                self.input_labels: batch_label,
                                self.input_sequence_lengths: batch_seq_length})
                 #
-                if index % 10 == 0:
-                    preds = self.sparse_matrix_to_list(decodeds[0])
+                if index % 5 == 0:
+                    # 预测值
+                    preds = self.sparse_matrix_to_list(decodes[0])
+                    # 实际值
                     gt_labels = self.sparse_matrix_to_list(batch_label)
                     accuracy = []
                     for j, gt_label in enumerate(gt_labels):
                         pred = preds[j]
                         #
-                        print('prediction:', pred)
+                        print('prediction:', pred, )
                         print('grouth_truth_label:', gt_label)
                         #
                         total_count = len(gt_label)
@@ -223,10 +229,10 @@ class CRNN(object):
                                 else:
                                     accuracy.append(0)
                     accuracy = np.mean(np.array(accuracy).astype(np.float32), axis=0)
-                    print('epoches:', index, ' loss:', loss, ' seq_distance:', seq_distance,
-                          ' learning_rate:', lr, ' accuracy:', accuracy)
+                    print('step:{:d} learning_rate={:9f} ctc_loss={:9f} sequence_distance={:9f} train_accuracy={:9f}'
+                          .format(index + 1, lr, loss, seq_distance, accuracy))
                     summary_writer.add_summary(summary=summary, global_step=index)
-                if (index + 1) % 5000 == 0:
+                if index % 50 == 0:
                     saver.save(sess=session, save_path=model_save_path, global_step=index)
 
                 # #
